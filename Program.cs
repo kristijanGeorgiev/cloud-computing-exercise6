@@ -7,7 +7,7 @@ app.MapGet("/", () =>
 {
     return Results.Ok(new
     {
-        Message = "Welcome to Cloud Computing API!",
+        Message = "Welcome to Cloud Computing API - CI/CD Deployment!",
         Course = "Cloud Computing",
         Technology = "ASP.NET Core",
         Environment = app.Environment.EnvironmentName,
