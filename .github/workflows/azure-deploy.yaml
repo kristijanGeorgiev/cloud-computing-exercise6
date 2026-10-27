@@ -1,0 +1,79 @@
+
+name: Build and Deploy ASP.NET Core API to Azure
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: azure-production-deployment
+  cancel-in-progress: false
+
+env:
+  RESOURCE_GROUP: rg-cloudcomputing-lab
+  ACR_NAME: cloudlab319985
+  CONTAINER_APP_NAME: cloudcomputing-api
+  IMAGE_NAME: cloud-computing-api
+
+jobs:
+  build-and-deploy:
+    name: Build, Test and Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore CloudComputingApi.csproj
+
+      - name: Build application
+        run: dotnet build CloudComputingApi.csproj --configuration Release --no-restore
+
+      - name: Azure login using OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Authenticate Docker to Azure Container Registry
+        run: az acr login --name "$ACR_NAME"
+
+      - name: Build Docker image
+        run: |
+          IMAGE="$ACR_NAME.azurecr.io/$IMAGE_NAME:$GITHUB_SHA"
+          docker build --file Dockerfile --tag "$IMAGE" .
+
+      - name: Push Docker image
+        run: |
+          IMAGE="$ACR_NAME.azurecr.io/$IMAGE_NAME:$GITHUB_SHA"
+          docker push "$IMAGE"
+
+      - name: Deploy to Azure Container Apps
+        run: |
+          IMAGE="$ACR_NAME.azurecr.io/$IMAGE_NAME:$GITHUB_SHA"
+
+          az containerapp update \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "$IMAGE"
+
+      - name: Verify Azure deployment
+        run: |
+          az containerapp show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query "{State:properties.provisioningState,Image:properties.template.containers[0].image}" \
+            --output table
